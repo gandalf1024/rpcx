@@ -19,26 +19,26 @@ import (
 )
 
 func (s *Server) startGateway(network string, ln net.Listener) net.Listener {
-	if network != "tcp" && network != "tcp4" && network != "tcp6" && network != "reuseport" {
+	if network != "tcp" && network != "tcp4" && network != "tcp6" {
 		// log.Infof("network is not tcp/tcp4/tcp6 so can not start gateway")
 		return ln
 	}
 
-	m := cmux.New(ln)
+	m := cmux.New(ln) //初始化多路复器实例
 
 	rpcxLn := m.Match(rpcxPrefixByteMatcher())
 
 	if !s.DisableJSONRPC {
 		jsonrpc2Ln := m.Match(cmux.HTTP1HeaderField("X-JSONRPC-2.0", "true"))
-		go s.startJSONRPC2(jsonrpc2Ln)
+		go s.startJSONRPC2(jsonrpc2Ln) //多路1 json rpc
 	}
 
 	if !s.DisableHTTPGateway {
 		httpLn := m.Match(cmux.HTTP1Fast())
-		go s.startHTTP1APIGateway(httpLn)
+		go s.startHTTP1APIGateway(httpLn) //多路2 http
 	}
 
-	go m.Serve()
+	go m.Serve() //启动异步监听
 
 	return rpcxLn
 }

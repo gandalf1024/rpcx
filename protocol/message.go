@@ -159,6 +159,8 @@ func (h *Header) SetHeartbeat(hb bool) {
 	}
 }
 
+// IsOneway返回消息是否为单向消息。
+// 如果为true，则服务器将不会发送响应。
 // IsOneway returns whether the message is one-way message.
 // If true, server won't send responses.
 func (h Header) IsOneway() bool {
@@ -231,6 +233,7 @@ func (m Message) Encode() []byte {
 	return *data
 }
 
+// EncodeSlicePointer将消息编码为字节切片Poiter，我们可以使用pool进行改进。
 // EncodeSlicePointer encodes messages as a byte slice poiter we we can use pool to improve.
 func (m Message) EncodeSlicePointer() *[]byte {
 	meta := encodeMetadata(m.Metadata)

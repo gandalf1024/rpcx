@@ -45,6 +45,7 @@ type service struct {
 	function map[string]*functionType // registered functions
 }
 
+//判断首字符是否大写
 func isExported(name string) bool {
 	rune, _ := utf8.DecodeRuneInString(name)
 	return unicode.IsUpper(rune)
@@ -80,8 +81,8 @@ func (s *Server) Register(rcvr interface{}, metadata string) error {
 // RegisterName is like Register but uses the provided name for the type
 // instead of the receiver's concrete type.
 func (s *Server) RegisterName(name string, rcvr interface{}, metadata string) error {
-	s.Plugins.DoRegister(name, rcvr, metadata)
-	_, err := s.register(rcvr, name, true)
+	s.Plugins.DoRegister(name, rcvr, metadata) //注册插件
+	_, err := s.register(rcvr, name, true)     //注册结构体
 	return err
 }
 
@@ -106,37 +107,38 @@ func (s *Server) RegisterFunctionName(servicePath string, name string, fn interf
 	if err != nil {
 		return err
 	}
-	
+
 	return s.Plugins.DoRegisterFunction(servicePath, name, fn, metadata)
 }
 
+//注册结构体
 func (s *Server) register(rcvr interface{}, name string, useName bool) (string, error) {
 	s.serviceMapMu.Lock()
 	defer s.serviceMapMu.Unlock()
 
-	service := new(service)
-	service.typ = reflect.TypeOf(rcvr)
-	service.rcvr = reflect.ValueOf(rcvr)
-	sname := reflect.Indirect(service.rcvr).Type().Name() // Type
-	if useName {
-		sname = name
+	service := new(service)                               //初始化service实例
+	service.typ = reflect.TypeOf(rcvr)                    //获取结构体类型
+	service.rcvr = reflect.ValueOf(rcvr)                  //获取
+	sname := reflect.Indirect(service.rcvr).Type().Name() // Type  获取注册结构体名字
+	if useName {                                          //判断是否使用别名
+		sname = name //赋值别名
 	}
 	if sname == "" {
 		errorStr := "rpcx.Register: no service name for type " + service.typ.String()
 		log.Error(errorStr)
 		return sname, errors.New(errorStr)
 	}
-	if !useName && !isExported(sname) {
+	if !useName && !isExported(sname) { // isExported是否是导出类型
 		errorStr := "rpcx.Register: type " + sname + " is not exported"
 		log.Error(errorStr)
 		return sname, errors.New(errorStr)
 	}
-	service.name = sname
+	service.name = sname //别名赋值
 
-	// Install the methods
+	// Install the methods 赋值所有注册结构体方法
 	service.method = suitableMethods(service.typ, true)
 
-	if len(service.method) == 0 {
+	if len(service.method) == 0 { //错误处理
 		var errorStr string
 
 		// To help the user, see if a pointer receiver would work.
@@ -149,7 +151,7 @@ func (s *Server) register(rcvr interface{}, name string, useName bool) (string, 
 		log.Error(errorStr)
 		return sname, errors.New(errorStr)
 	}
-	s.serviceMap[service.name] = service
+	s.serviceMap[service.name] = service //一个结构体注册完成
 	return sname, nil
 }
 
@@ -229,20 +231,21 @@ func (s *Server) registerFunction(servicePath string, fn interface{}, name strin
 	return fname, nil
 }
 
+// 根据结构体type信息反射出所有方法
 // suitableMethods returns suitable Rpc methods of typ, it will report
 // error using log if reportErr is true.
 func suitableMethods(typ reflect.Type, reportErr bool) map[string]*methodType {
-	methods := make(map[string]*methodType)
-	for m := 0; m < typ.NumMethod(); m++ {
-		method := typ.Method(m)
-		mtype := method.Type
-		mname := method.Name
+	methods := make(map[string]*methodType) //map[别名]方法
+	for m := 0; m < typ.NumMethod(); m++ {  //反射便利所有方法
+		method := typ.Method(m) //获取单个方法
+		mtype := method.Type    //获取方法类型
+		mname := method.Name    //获取方法名称
 		// Method must be exported.
 		if method.PkgPath != "" {
 			continue
 		}
 		// Method needs four ins: receiver, context.Context, *args, *reply.
-		if mtype.NumIn() != 4 {
+		if mtype.NumIn() != 4 { //方法参数判断  receiver:返回值, context.Context, *args, *reply.
 			if reportErr {
 				log.Debug("method ", mname, " has wrong number of ins:", mtype.NumIn())
 			}
@@ -250,7 +253,7 @@ func suitableMethods(typ reflect.Type, reportErr bool) map[string]*methodType {
 		}
 		// First arg must be context.Context
 		ctxType := mtype.In(1)
-		if !ctxType.Implements(typeOfContext) {
+		if !ctxType.Implements(typeOfContext) { //判断第一个参数是否是: context.Context
 			if reportErr {
 				log.Debug("method ", mname, " must use context.Context as the first parameter")
 			}
@@ -259,7 +262,7 @@ func suitableMethods(typ reflect.Type, reportErr bool) map[string]*methodType {
 
 		// Second arg need not be a pointer.
 		argType := mtype.In(2)
-		if !isExportedOrBuiltinType(argType) {
+		if !isExportedOrBuiltinType(argType) { //第二个参数不能是指针类型
 			if reportErr {
 				log.Info(mname, " parameter type not exported: ", argType)
 			}
@@ -267,33 +270,34 @@ func suitableMethods(typ reflect.Type, reportErr bool) map[string]*methodType {
 		}
 		// Third arg must be a pointer.
 		replyType := mtype.In(3)
-		if replyType.Kind() != reflect.Ptr {
+		if replyType.Kind() != reflect.Ptr { //第三个参数(返回值),必须是指针类型
 			if reportErr {
 				log.Info("method", mname, " reply type not a pointer:", replyType)
 			}
 			continue
 		}
 		// Reply type must be exported.
-		if !isExportedOrBuiltinType(replyType) {
+		if !isExportedOrBuiltinType(replyType) { //第三个参数(返回值),必须是导出类型
 			if reportErr {
 				log.Info("method", mname, " reply type not exported:", replyType)
 			}
 			continue
 		}
 		// Method needs one out.
-		if mtype.NumOut() != 1 {
+		if mtype.NumOut() != 1 { //返回值数量是否是1
 			if reportErr {
 				log.Info("method", mname, " has wrong number of outs:", mtype.NumOut())
 			}
 			continue
 		}
 		// The return type of the method must be error.
-		if returnType := mtype.Out(0); returnType != typeOfError {
+		if returnType := mtype.Out(0); returnType != typeOfError { //判断返回类型是否是错误类型
 			if reportErr {
 				log.Info("method", mname, " returns ", returnType.String(), " not error")
 			}
 			continue
 		}
+		//methods[方法名] = &methodType{method: 反射方法, ArgType: 请求参数, ReplyType: 返回值参数}
 		methods[mname] = &methodType{method: method, ArgType: argType, ReplyType: replyType}
 
 		argsReplyPools.Init(argType)
@@ -336,6 +340,7 @@ func (s *service) call(ctx context.Context, mtype *methodType, argv, replyv refl
 	}()
 
 	function := mtype.method.Func
+	//反射执行方法
 	// Invoke the method, providing a new value for the reply.
 	returnValues := function.Call([]reflect.Value{s.rcvr, reflect.ValueOf(ctx), argv, replyv})
 	// The return value for the method is an error.

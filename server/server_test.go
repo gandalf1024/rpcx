@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"flag"
+	"fmt"
 	"testing"
 
 	"time"
@@ -114,5 +116,26 @@ func TestHandleRequest(t *testing.T) {
 
 	if reply.C != 200 {
 		t.Fatalf("expect 200 but got %d", reply.C)
+	}
+}
+
+var (
+	addr = flag.String("addr", "localhost:8972", "server address")
+)
+
+type Arith2 int
+
+func (a *Arith2) Mul(ctx context.Context, args Args, reply *Reply) error {
+	reply.C = args.A * args.B
+	fmt.Println("C=", reply.C)
+	return nil
+}
+
+func Test_RegisterName(t *testing.T) {
+	s := NewServer()
+	s.RegisterName("Arith2", new(Arith2), "")
+	err := s.Serve("tcp", *addr)
+	if err != nil {
+		panic(err)
 	}
 }

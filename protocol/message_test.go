@@ -37,7 +37,7 @@ func TestMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fmt.Println(buf.Bytes())
+	fmt.Println(string(buf.Bytes()))
 
 	res, err := Read(&buf)
 	if err != nil {
