@@ -426,7 +426,7 @@ func (s *Server) serveConn(conn net.Conn) {
 			}
 
 			s.Plugins.DoPreWriteResponse(newCtx, req, res, err) //插件 前置write执行
-			if !req.IsOneway() {
+			if !req.IsOneway() {                                //判断是否为单向消息
 				if len(resMetadata) > 0 { //copy meta in context to request
 					meta := res.Metadata
 					if meta == nil {
@@ -443,8 +443,8 @@ func (s *Server) serveConn(conn net.Conn) {
 				if len(res.Payload) > 1024 && req.CompressType() != protocol.None {
 					res.SetCompressType(req.CompressType())
 				}
-				data := res.EncodeSlicePointer()
-				conn.Write(*data)
+				data := res.EncodeSlicePointer() //编码消息为切片
+				conn.Write(*data)                //网络响应消息体给客户端
 				protocol.PutData(data)
 			}
 			s.Plugins.DoPostWriteResponse(newCtx, req, res, err) //插件 后置write执行
@@ -517,7 +517,7 @@ func (s *Server) handleRequest(ctx context.Context, req *protocol.Message) (res 
 		return handleError(res, err)
 	}
 
-	var argv = argsReplyPools.Get(mtype.ArgType) //type 获取实例
+	var argv = argsReplyPools.Get(mtype.ArgType) //获取请求消息实例
 
 	codec := share.Codecs[req.SerializeType()]
 	if codec == nil {
@@ -525,44 +525,44 @@ func (s *Server) handleRequest(ctx context.Context, req *protocol.Message) (res 
 		return handleError(res, err)
 	}
 
-	err = codec.Decode(req.Payload, argv)
+	err = codec.Decode(req.Payload, argv) //请求消息体反射到请求参数体
 	if err != nil {
 		return handleError(res, err)
 	}
 
-	replyv := argsReplyPools.Get(mtype.ReplyType)
+	replyv := argsReplyPools.Get(mtype.ReplyType) //获取响应体消息实例
 
-	argv, err = s.Plugins.DoPreCall(ctx, serviceName, methodName, argv)
+	argv, err = s.Plugins.DoPreCall(ctx, serviceName, methodName, argv) //前置执行插件
 	if err != nil {
 		argsReplyPools.Put(mtype.ReplyType, replyv)
 		return handleError(res, err)
 	}
 
 	//执行
-	if mtype.ArgType.Kind() != reflect.Ptr {
+	if mtype.ArgType.Kind() != reflect.Ptr { //判断请求架构体是否为指针类型
 		err = service.call(ctx, mtype, reflect.ValueOf(argv).Elem(), reflect.ValueOf(replyv))
 	} else {
 		err = service.call(ctx, mtype, reflect.ValueOf(argv), reflect.ValueOf(replyv))
 	}
 
 	if err == nil {
-		replyv, err = s.Plugins.DoPostCall(ctx, serviceName, methodName, argv, replyv)
+		replyv, err = s.Plugins.DoPostCall(ctx, serviceName, methodName, argv, replyv) //后置执行插件
 	}
 
-	argsReplyPools.Put(mtype.ArgType, argv)
+	argsReplyPools.Put(mtype.ArgType, argv) //请求体pool重用
 	if err != nil {
 		argsReplyPools.Put(mtype.ReplyType, replyv)
 		return handleError(res, err)
 	}
 
-	if !req.IsOneway() {
-		data, err := codec.Encode(replyv)
-		argsReplyPools.Put(mtype.ReplyType, replyv)
+	if !req.IsOneway() { //如果不是单向消息
+		data, err := codec.Encode(replyv)           //转换返回值
+		argsReplyPools.Put(mtype.ReplyType, replyv) //响应体pool重用
 		if err != nil {
 			return handleError(res, err)
 
 		}
-		res.Payload = data
+		res.Payload = data //编码后的数据赋值
 	} else if replyv != nil {
 		argsReplyPools.Put(mtype.ReplyType, replyv)
 	}

@@ -1,10 +1,11 @@
-package main
+package d_02_reflect
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/smallnest/rpcx/examples"
 	"reflect"
 	"sync"
 	"testing"
@@ -12,9 +13,9 @@ import (
 
 type methodType struct {
 	sync.Mutex
-	method    reflect.Method
-	ArgType   reflect.Type
-	ReplyType reflect.Type
+	method    reflect.Method //反射方法
+	ArgType   reflect.Type   //参数结构体
+	ReplyType reflect.Type   //返回结构体
 }
 
 type functionType struct {
@@ -30,6 +31,23 @@ type service struct {
 	typ      reflect.Type
 	method   map[string]*methodType
 	function map[string]*functionType
+}
+
+func (s *service) call(ctx context.Context, mtype *methodType, argv, replyv reflect.Value) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Println(r)
+		}
+	}()
+
+	function := mtype.method.Func
+	//反射执行方法
+	returnValues := function.Call([]reflect.Value{s.rcvr, reflect.ValueOf(ctx), argv, replyv})
+	errInter := returnValues[0].Interface()
+	if errInter != nil {
+		return errInter.(error)
+	}
+	return nil
 }
 
 var req = `{"A":10,"B":20}`
@@ -57,8 +75,6 @@ func Test_Reflect(t *testing.T) {
 	} else {
 		err = service.call(context.Background(), mtype, reflect.ValueOf(argv), reflect.ValueOf(replyv))
 	}
-
-	fmt.Println(err)
 }
 
 func suitableMethods(typ reflect.Type) map[string]*methodType {
@@ -78,7 +94,7 @@ func suitableMethods(typ reflect.Type) map[string]*methodType {
 func instance(t reflect.Type) interface{} {
 	var argv reflect.Value
 
-	if t.Kind() == reflect.Ptr { // reply must be ptr
+	if t.Kind() == reflect.Ptr {
 		argv = reflect.New(t.Elem())
 	} else {
 		argv = reflect.New(t)
@@ -87,26 +103,16 @@ func instance(t reflect.Type) interface{} {
 	return argv.Interface()
 }
 
-func (s *service) call(ctx context.Context, mtype *methodType, argv, replyv reflect.Value) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			fmt.Println(r)
-		}
-	}()
-
-	function := mtype.method.Func
-	//反射执行方法
-	returnValues := function.Call([]reflect.Value{s.rcvr, reflect.ValueOf(ctx), argv, replyv})
-	errInter := returnValues[0].Interface()
-	if errInter != nil {
-		return errInter.(error)
-	}
-
-	return nil
-}
-
 func Decode(data []byte, i interface{}) error {
 	d := json.NewDecoder(bytes.NewBuffer(data))
 	d.UseNumber()
 	return d.Decode(i)
+}
+
+type Arith struct{}
+
+func (t *Arith) Mul(ctx context.Context, args examples.Args, reply *examples.Reply) error {
+	reply.C = args.A * args.B
+	fmt.Println("server:=", reply.C)
+	return nil
 }
